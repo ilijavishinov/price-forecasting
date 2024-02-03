@@ -69,6 +69,7 @@ class TimeSeriesHandler(object):
     endog = None
     exog = None
     forecast = None
+    exog_forecast = None
     
     def __init__(self,
                  name,
@@ -83,6 +84,11 @@ class TimeSeriesHandler(object):
         
         self.train = self.df.loc[:'2022-12', :]
         self.test = self.df.loc['2023-01':, :]
+    
+    
+    def set_exog_forecast(self,
+                          exog_forecast_df):
+        self.exog_forecast = exog_forecast_df
     
     def determine_diff_order(self):
         """
@@ -156,7 +162,7 @@ class TimeSeriesHandler(object):
     def fit_sarimax_exog(self,
                          plot = False):
         
-        fig, ax = plt.subplots(figsize = (15, 5))
+        fig, ax = plt.subplots(figsize = (10, 3))
         
         model = SARIMAX(endog = self.train[self.endog],
                         exog = self.train[self.exog] if self.exog is not None else None,
@@ -169,7 +175,7 @@ class TimeSeriesHandler(object):
         y_upper = pred_summary['mean_ci_upper']
         
         fcast = model_fit.get_forecast(steps = len(self.test)).summary_frame()
-        self.forecast = fcast
+        self.forecast = fcast['mean']
         
         if plot:
             ax.plot(self.df[self.endog], label = 'Ground Truth')
@@ -216,7 +222,7 @@ class TimeSeriesHandler(object):
             ax.fill_between(x = self.train.index, y1 = y_lower, y2 = y_upper, color = 'orange', alpha = 0.2)
         
         # forecast
-        fcast = model_fit.get_forecast(steps = len(self.test), exog = self.test[self.exog]).summary_frame()
+        fcast = model_fit.get_forecast(steps = len(self.test), exog = self.exog_forecast).summary_frame()
         if plot_prediction:
             ax.plot(fcast['mean'], label = 'Forecast')
             ax.fill_between(fcast.index, fcast['mean_ci_lower'], fcast['mean_ci_upper'], alpha = 0.2)
