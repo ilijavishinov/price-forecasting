@@ -116,3 +116,60 @@ class TimeSeriesHandler(object):
                                               acf_lags = acf_lags,
                                               diffs = [order_diff])
     
+    def fit_sarimax(self,
+                    plot_fit = False,
+                    plot_prediction = False,
+                    rolling_prediction = False,
+                    plot_rolling = False):
+        fig, ax = plt.subplots(figsize = (15, 5))
+        show_plot = any([plot_fit, plot_prediction, plot_rolling])
+        
+        model = SARIMAX(endog = self.train[self.endog],
+                        exog = self.train[self.exog] if self.exog is not None else None,
+                        order = self.best_order)
+        
+        model_fit = model.fit()
+        pred_summary = model_fit.get_prediction(self.train.index[0], self.train.index[-1]).summary_frame()
+        pred_list = pred_summary['mean']
+        y_lower = pred_summary['mean_ci_lower']
+        y_upper = pred_summary['mean_ci_upper']
+        
+        # pred_list.index = pred_list.index - pd.Timedelta(days = 30.5)
+        # y_lower.index = y_lower.index - pd.Timedelta(days = 30.5)
+        # y_upper.index = y_upper.index - pd.Timedelta(days = 30.5)
+        
+        if plot_fit:
+            ax.plot(self.df[self.endog], label = 'Ground Truth')
+            ax.plot(pred_list, label = 'Fit')
+            ax.fill_between(x = self.train.index, y1 = y_lower, y2 = y_upper, color = 'orange', alpha = 0.2)
+        
+        # forecast
+        fcast = model_fit.get_forecast(steps = 12, exog = self.test[self.exog]).summary_frame()
+        if plot_prediction:
+            ax.plot(fcast['mean'], label = 'Forecast')
+            ax.fill_between(fcast.index, fcast['mean_ci_lower'], fcast['mean_ci_upper'], alpha = 0.2)
+        
+        # # rolling prediction
+        # predictions = pd.Series()
+        # history = train
+        # for i in range(len(test)):
+        #     model = SARIMAX(endog = history[self.endog],
+        #                     exog = history[self.exog] if self.exog is not None else None,
+        #                     order = self.best_order)
+        #
+        #     model_fit = model.fit()
+        #     output = model_fit.forecast(steps = 1)
+        #     predictions = pd.concat([predictions, output])
+        #     history = pd.concat([history, test[i:i + 1]])
+        #
+        # if plot_rolling:
+        #     ax.plot(predictions, label = 'Rolling Prediction')
+        #     # ax.set_title(f'{self.name}\n rmse={round(rmse, 4)}\n order={self.best_order}, seasonal_order={seasonal_order}')
+        
+        if show_plot:
+            for i in vlines(self.df):
+                ax.axvline(x = i, color = "black", alpha = 0.2, linestyle = "--")
+            ax.legend()
+            ax.set_title('Model fit')
+            fig.show()
+    
