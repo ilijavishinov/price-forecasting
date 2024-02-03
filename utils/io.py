@@ -11,12 +11,15 @@ class DataHandler(object):
         self.data_path = data_path
         
         self.comodity_prices = pd.read_csv(os.path.join(data_path, 'commodity_long.csv'))
+        self.comodity_prices.index = pd.DatetimeIndex(self.comodity_prices['ts_month'])
         
         self.financial_index = pd.read_csv(os.path.join(data_path, 'comp fin index.csv'))
         self.financial_index.index = pd.DatetimeIndex(self.financial_index.date)
         self.financial_index.drop(['date', 'Unnamed: 0'], axis = 1, inplace = True)
         
         self.fleet = pd.read_csv(os.path.join(data_path, 'fleet feats test.csv'))
+        self.fleet['date'] = pd.to_datetime(self.fleet['Delivery Date'])
+        self.fleet.drop('Delivery Date', axis = 1, inplace = True)
         
         self.gdp = pd.read_csv(os.path.join(data_path, 'mgdp index.csv'))
         self.gdp.index = pd.DatetimeIndex(self.gdp.date)
@@ -58,7 +61,6 @@ class DataHandler(object):
         fin_idx_df = self.financial_index.reindex(idx)
         fin_idx_df = fin_idx_df.interpolate(method = 'linear')
         fin_idx_df.bfill(inplace = True)
-        
         # fin_idx_df.index = fin_idx_df['index']
         # fin_idx_df.drop(['index'], axis = 1, inplace = True)
         
@@ -73,9 +75,22 @@ class DataHandler(object):
         gdp_fin_idx_merged = pd.merge(gdp_df, fin_idx_df, how = 'inner', left_index = True, right_index = True)
         sales_all_fin_merged = pd.merge(gdp_fin_idx_merged, sales_df, how = 'inner', left_index = True, right_index = True)
         
-        # sales_all_fin_merged.index = sales_all_fin_merged.index + pd.Timedelta(days = 1)
+        sales_all_fin_merged.index = sales_all_fin_merged.index + pd.Timedelta(days = 1)
+        
+        comodity_df_pivot = self.comodity_prices.pivot_table(index = self.comodity_prices.index, columns = ['commodity_name'], values = ['value'])
+        comodity_df_pivot.columns = list(comodity_df_pivot.columns.droplevel(level = 0))
+        comodity_df_pivot = comodity_df_pivot.loc['2017-02':]
+        
+        sales_all_fin_merged = pd.merge(sales_all_fin_merged, comodity_df_pivot, how = 'inner', left_index = True, right_index = True)
+        
+        fleet_agg = self.fleet[self.fleet['SalesArea'] == region]
+        fleet_agg = fleet_agg.resample(rule = 'M', on = 'date').sum()
+        fleet_agg.index = fleet_agg.index + pd.Timedelta(days = 1)
+        
+        sales_all_fin_merged = pd.merge(sales_all_fin_merged, fleet_agg[['fleet1', 'fleet2', 'fleet3']], how = 'inner', left_index = True, right_index = True)
         
         return sales_all_fin_merged
+    
     
 # def read_ts_files():
 #     """

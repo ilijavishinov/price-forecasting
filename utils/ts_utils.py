@@ -70,6 +70,7 @@ class TimeSeriesHandler(object):
     exog = None
     forecast = None
     exog_forecast = None
+    seasonal_order = None
     
     def __init__(self,
                  name,
@@ -103,7 +104,7 @@ class TimeSeriesHandler(object):
             time_series = diff_ts.diff().dropna()
             diff_order += 1
             ts_stationary = adf_summary(time_series)['test_significant']
-            print(f'{diff_order} stationary {ts_stationary}')
+            # print(f'{diff_order} stationary {ts_stationary}')
             if diff_order == 3:
                 break
         
@@ -135,7 +136,7 @@ class TimeSeriesHandler(object):
         
         ic_list = list()
         for pdq in pdqs[:3]:
-            print(f'Fitting {pdq} for {self.name}')
+            # print(f'Fitting {pdq} for {self.name}')
             ar_model = ARIMA(endog = self.train[self.endog],
                              exog = self.train[self.exog] if self.exog is not None else None,
                              order = pdq)
@@ -162,7 +163,6 @@ class TimeSeriesHandler(object):
     def fit_sarimax_exog(self,
                          plot = False):
         
-        fig, ax = plt.subplots(figsize = (10, 3))
         
         model = SARIMAX(endog = self.train[self.endog],
                         exog = self.train[self.exog] if self.exog is not None else None,
@@ -178,6 +178,7 @@ class TimeSeriesHandler(object):
         self.forecast = fcast['mean']
         
         if plot:
+            fig, ax = plt.subplots(figsize = (10, 3))
             ax.plot(self.df[self.endog], label = 'Ground Truth')
             ax.plot(pred_list, label = 'Fit')
             # ax.fill_between(x = self.train.index, y1 = y_lower, y2 = y_upper, color = 'orange', alpha = 0.2)
@@ -187,7 +188,7 @@ class TimeSeriesHandler(object):
             for i in vlines(self.df):
                 ax.axvline(x = i, color = "black", alpha = 0.2, linestyle = "--")
             ax.legend()
-            ax.set_title(f'Model fit {self.name}')
+            ax.set_title(f'Model fit {self.name} \n order {self.best_order}')
             fig.show()
             
         
@@ -248,6 +249,6 @@ class TimeSeriesHandler(object):
             for i in vlines(self.df):
                 ax.axvline(x = i, color = "black", alpha = 0.2, linestyle = "--")
             ax.legend()
-            ax.set_title(f'Model fit {name}')
+            ax.set_title(f'Model fit {self.name}\n rmse={round(12.1234, 4)}\n order={self.best_order}, seasonal_order={self.seasonal_order}')
             fig.show()
     
