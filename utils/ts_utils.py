@@ -5,6 +5,11 @@ from numpy import sqrt
 from sklearn.metrics import mean_squared_error
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.seasonal import STL
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from statsmodels.tsa.stattools import acf
+from statsmodels.tsa.stattools import adfuller, pacf
+
+
 def rename_columns(columns,
                    rename_dict):
     """
@@ -25,8 +30,36 @@ def vlines(df):
         return dt_years
     else:
         return []
+    
+
+def pdq_grid(p, d, q):
+    grid = []
+    for i in p:
+        for j in d:
+            for k in q:
+                grid.append((i, j, k))
+    return grid
 
 
+def adf_summary(time_series):
+    """
+    """
+    # set name
+    adf_test = dict()
+    
+    # get return values
+    adf_test['adfstat'], adf_test['pvalue'], adf_test['usedlag'], adf_test['nobs'], adf_test['critvalues'], adf_test['icbest'] = adfuller(time_series.dropna())
+    
+    adf_test['test_significant'] = adf_test['pvalue'] < 0.25
+    
+    # unpack critical values
+    for pct in [1, 5, 10]:
+        adf_test[f'critical_value_{pct}pct'] = adf_test['critvalues'][f'{pct}%']
+        adf_test[f'critical_value_{pct}pct_significant'] = adf_test['adfstat'] < adf_test[f'critical_value_{pct}pct']
+    
+    adf_test.pop('critvalues')
+    
+    return adf_test
 
 class TimeSeriesHandler(object):
     """
@@ -35,6 +68,7 @@ class TimeSeriesHandler(object):
     best_order = None
     endog = None
     exog = None
+    forecast = None
     
     def __init__(self,
                  name,
@@ -42,7 +76,7 @@ class TimeSeriesHandler(object):
                  endog,
                  exog = None):
         
-        self.name = name,
+        self.name = name
         self.df = df
         self.endog = endog
         self.exog = exog
@@ -63,6 +97,9 @@ class TimeSeriesHandler(object):
             time_series = diff_ts.diff().dropna()
             diff_order += 1
             ts_stationary = adf_summary(time_series)['test_significant']
+            print(f'{diff_order} stationary {ts_stationary}')
+            if diff_order == 3:
+                break
         
         return diff_ts, diff_order
     
@@ -91,8 +128,8 @@ class TimeSeriesHandler(object):
                         q = acf_lags if len(acf_lags) > 0 else [0], )
         
         ic_list = list()
-        for pdq in pdqs[:10]:
-            
+        for pdq in pdqs[:3]:
+            print(f'Fitting {pdq} for {self.name}')
             ar_model = ARIMA(endog = self.train[self.endog],
                              exog = self.train[self.exog] if self.exog is not None else None,
                              order = pdq)
@@ -115,12 +152,47 @@ class TimeSeriesHandler(object):
         self.best_order = self.best_aic_order(pacf_lags = pacf_lags,
                                               acf_lags = acf_lags,
                                               diffs = [order_diff])
-    
+        
+    def fit_sarimax_exog(self,
+                         plot = False):
+        
+        fig, ax = plt.subplots(figsize = (15, 5))
+        
+        model = SARIMAX(endog = self.train[self.endog],
+                        exog = self.train[self.exog] if self.exog is not None else None,
+                        order = self.best_order)
+        
+        model_fit = model.fit()
+        pred_summary = model_fit.get_prediction(self.train.index[0], self.train.index[-1]).summary_frame()
+        pred_list = pred_summary['mean']
+        y_lower = pred_summary['mean_ci_lower']
+        y_upper = pred_summary['mean_ci_upper']
+        
+        fcast = model_fit.get_forecast(steps = len(self.test)).summary_frame()
+        self.forecast = fcast
+        
+        if plot:
+            ax.plot(self.df[self.endog], label = 'Ground Truth')
+            ax.plot(pred_list, label = 'Fit')
+            # ax.fill_between(x = self.train.index, y1 = y_lower, y2 = y_upper, color = 'orange', alpha = 0.2)
+            ax.plot(fcast['mean'], label = 'Forecast')
+            # ax.fill_between(fcast.index, fcast['mean_ci_lower'], fcast['mean_ci_upper'], alpha = 0.2)
+            
+            for i in vlines(self.df):
+                ax.axvline(x = i, color = "black", alpha = 0.2, linestyle = "--")
+            ax.legend()
+            ax.set_title(f'Model fit {self.name}')
+            fig.show()
+            
+        
+        
     def fit_sarimax(self,
+                    name,
                     plot_fit = False,
                     plot_prediction = False,
                     rolling_prediction = False,
                     plot_rolling = False):
+        
         fig, ax = plt.subplots(figsize = (15, 5))
         show_plot = any([plot_fit, plot_prediction, plot_rolling])
         
@@ -144,7 +216,7 @@ class TimeSeriesHandler(object):
             ax.fill_between(x = self.train.index, y1 = y_lower, y2 = y_upper, color = 'orange', alpha = 0.2)
         
         # forecast
-        fcast = model_fit.get_forecast(steps = 12, exog = self.test[self.exog]).summary_frame()
+        fcast = model_fit.get_forecast(steps = len(self.test), exog = self.test[self.exog]).summary_frame()
         if plot_prediction:
             ax.plot(fcast['mean'], label = 'Forecast')
             ax.fill_between(fcast.index, fcast['mean_ci_lower'], fcast['mean_ci_upper'], alpha = 0.2)
@@ -170,6 +242,6 @@ class TimeSeriesHandler(object):
             for i in vlines(self.df):
                 ax.axvline(x = i, color = "black", alpha = 0.2, linestyle = "--")
             ax.legend()
-            ax.set_title('Model fit')
+            ax.set_title(f'Model fit {name}')
             fig.show()
     
