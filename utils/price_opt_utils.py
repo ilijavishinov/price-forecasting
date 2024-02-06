@@ -122,7 +122,8 @@ def linear_regression_coefficients(model, X):
 
 def linear_regression_formula(model, X, y_name = ''):
     coefs = {X.columns[i]: model.coef_[i].round(4) for i in range(X.shape[1])}
-    formula_str = f'{y_name} = '
+    intercept = model.intercept_
+    formula_str = f'{y_name} = {int(intercept)} '
     for coef_name, coef_value in coefs.items():
         formula_str += f'{"+" if coef_value >= 0 else "-"} {int(abs(coef_value))} {coef_name} '
     formula_str = formula_str[:-3]
