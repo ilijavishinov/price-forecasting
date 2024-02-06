@@ -1,1 +1,3 @@
-# ignize-interview
+## Ignize interview
+
+![plot](./imgs/banner.png)
