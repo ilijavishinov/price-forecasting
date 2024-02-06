@@ -135,7 +135,8 @@ class TimeSeriesHandler(object):
                         q = acf_lags if len(acf_lags) > 0 else [0], )
         
         ic_list = list()
-        for pdq in pdqs[:3]:
+        for pdq in pdqs[:5]:
+        # for pdq in pdqs:
             # print(f'Fitting {pdq} for {self.name}')
             ar_model = ARIMA(endog = self.train[self.endog],
                              exog = self.train[self.exog] if self.exog is not None else None,
@@ -174,11 +175,15 @@ class TimeSeriesHandler(object):
         y_lower = pred_summary['mean_ci_lower']
         y_upper = pred_summary['mean_ci_upper']
         
+        pred_list.index = pred_list.index - pd.Timedelta(days = 30.5)
+        y_lower.index = y_lower.index - pd.Timedelta(days = 30.5)
+        y_upper.index = y_upper.index - pd.Timedelta(days = 30.5)
+        
         fcast = model_fit.get_forecast(steps = len(self.test)).summary_frame()
         self.forecast = fcast['mean']
         
         if plot:
-            fig, ax = plt.subplots(figsize = (10, 3))
+            fig, ax = plt.subplots(figsize = (20, 5))
             ax.plot(self.df[self.endog], label = 'Ground Truth')
             ax.plot(pred_list, label = 'Fit')
             # ax.fill_between(x = self.train.index, y1 = y_lower, y2 = y_upper, color = 'orange', alpha = 0.2)
@@ -189,6 +194,7 @@ class TimeSeriesHandler(object):
                 ax.axvline(x = i, color = "black", alpha = 0.2, linestyle = "--")
             ax.legend()
             ax.set_title(f'Model fit {self.name} \n order {self.best_order}')
+            plt.savefig(f'plots/{self.name}')
             fig.show()
             
         
@@ -200,12 +206,13 @@ class TimeSeriesHandler(object):
                     rolling_prediction = False,
                     plot_rolling = False):
         
-        fig, ax = plt.subplots(figsize = (15, 5))
+        fig, ax = plt.subplots(figsize = (20, 5))
         show_plot = any([plot_fit, plot_prediction, plot_rolling])
         
         model = SARIMAX(endog = self.train[self.endog],
                         exog = self.train[self.exog] if self.exog is not None else None,
-                        order = self.best_order)
+                        order = self.best_order,
+                        sesonal_order = (0,1,1,1))
         
         model_fit = model.fit()
         pred_summary = model_fit.get_prediction(self.train.index[0], self.train.index[-1]).summary_frame()
@@ -213,9 +220,9 @@ class TimeSeriesHandler(object):
         y_lower = pred_summary['mean_ci_lower']
         y_upper = pred_summary['mean_ci_upper']
         
-        # pred_list.index = pred_list.index - pd.Timedelta(days = 30.5)
-        # y_lower.index = y_lower.index - pd.Timedelta(days = 30.5)
-        # y_upper.index = y_upper.index - pd.Timedelta(days = 30.5)
+        pred_list.index = pred_list.index - pd.Timedelta(days = 30.5)
+        y_lower.index = y_lower.index - pd.Timedelta(days = 30.5)
+        y_upper.index = y_upper.index - pd.Timedelta(days = 30.5)
         
         if plot_fit:
             ax.plot(self.df[self.endog], label = 'Ground Truth')
@@ -250,5 +257,6 @@ class TimeSeriesHandler(object):
                 ax.axvline(x = i, color = "black", alpha = 0.2, linestyle = "--")
             ax.legend()
             ax.set_title(f'Model fit {self.name}\n rmse={round(12.1234, 4)}\n order={self.best_order}, seasonal_order={self.seasonal_order}')
+            plt.savefig(f'plots/{self.name}')
             fig.show()
     
