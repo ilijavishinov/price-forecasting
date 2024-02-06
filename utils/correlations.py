@@ -85,7 +85,28 @@ def percents_apply(percent):
     if abs(percent) <= 0.01: return .05
     if abs(percent) <= 0.05: return .25
     else: return 1
+    
+    # nested function for mapping the correlation value to a color
 
+def value_to_color(val):
+    
+    color_max = 1
+    color_min = -1
+    n_colors = 256
+    palette = sns.color_palette("RdBu_r", n_colors = n_colors)
+
+    # if outside of correlation scale
+    if val >= color_max:
+        return palette[-1]
+    if val <= color_min:
+        return palette[0]
+    
+    # position of value in the input range, relative to the length of the input range
+    val_position = float((val - color_min)) / (color_max - color_min)
+    # target index in the color palette
+    ind = int(val_position * (n_colors - 1))
+    
+    return palette[ind]
 
 def heatmap_scaled_by_pvalue(corr_pval_list,
                              save_path: str = None,
@@ -102,18 +123,8 @@ def heatmap_scaled_by_pvalue(corr_pval_list,
                              percentages: bool = False,
                              ) -> None:
     
-    """ Plot a correlation matrix with correlation cells scaled by p-value
-
-    :param corr_pval_list: list of correlation matrix and p-value matrix. correlation matrix comes first
-    :param save_path: [str, None]
-        If None, only show the plot.
-    :param max_corr: defines the max range of the color spectre
-    :param annot_fontsize: fontsize of the annotations
-    :param annot_white_treshold: absolute threshold above which annotations turn white for better visibility
-    :param size_scale: scale of the plot
-    :param annot_shift_y: shift points down on y axis
-    :param annot_shift_x: shift points left on x axis
-
+    """
+    Plot a correlation matrix with correlation cells scaled by p-value
     """
     
     # defaults
@@ -128,7 +139,9 @@ def heatmap_scaled_by_pvalue(corr_pval_list,
     
     # take correlation and p value matrix
     corr = corr_pval_list[0]
+    # corr = corr[corr.columns.tolist()[::-1]]
     pval = corr_pval_list[1]
+    # pval = pval[pval.columns.tolist()[::-1]]
     
     # scaling cells by percentage
     if percentages:
@@ -164,30 +177,6 @@ def heatmap_scaled_by_pvalue(corr_pval_list,
     # limits of the plot
     ax.set_xlim([-0.5, max([v for v in x_to_num.values()]) + 0.5])
     ax.set_ylim([-0.5, max([v for v in y_to_num.values()]) + 0.5])
-    
-    # calculations on colors
-    n_colors = 256
-    palette = sns.color_palette("RdBu_r", n_colors = n_colors)
-    
-    # range of correlations
-    if max_corr is not None: color_max, color_min = [max_corr * x for x in [1, -1]]
-    else: color_max, color_min = [var for var in [1, -1]]
-    
-    # nested function for mapping the correlation value to a color
-    def value_to_color(val):
-        
-        # if outside of correlation scale
-        if val >= color_max:
-            return palette[-1]
-        if val <= color_min:
-            return palette[0]
-        
-        # position of value in the input range, relative to the length of the input range
-        val_position = float((val - color_min)) / (color_max - color_min)
-        # target index in the color palette
-        ind = int(val_position * (n_colors - 1))
-        
-        return palette[ind]
     
     # take nans as zero correlations
     corr.replace(to_replace = {np.NaN: 0}, inplace = True)
