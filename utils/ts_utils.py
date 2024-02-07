@@ -1,4 +1,3 @@
-import json
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -11,46 +10,10 @@ from statsmodels.tsa.stattools import acf
 from statsmodels.tsa.stattools import adfuller, pacf
 import statsmodels.api as sm
 import os
-
+from utils.metrics import *
+from utils.io import *
 
 PLOTS_DIR = 'plots'
-
-def save_json_metadata(metadata_dir = None,
-                       file_name = None,
-                       data = None):
-    if not file_name.endswith('.json'):
-        file_name += '.json'
-    
-    if metadata_dir:
-        ensure_dir_exists(metadata_dir)
-        with open(os.path.join(metadata_dir, file_name), 'w', encoding = 'utf-8') as f:
-            json.dump(data, f, ensure_ascii = False)
-
-def regression_metrics(y_true, y_pred):
-    """
-    """
-    return dict(mae = mean_absolute_error(y_true, y_pred),
-                mape = mean_absolute_percentage_error(y_true, y_pred),
-                rmse = root_mean_squared_error(y_true, y_pred))
-
-
-def ensure_dir_exists(dir_path,
-                      check_parent_dir = False):
-    """
-    Creates a directory if it does not exist
-    Can be made recursve if needed
-    """
-    os.makedirs(dir_path, exist_ok = True)
-    
-
-def rename_columns(columns,
-                   rename_dict):
-    """
-    """
-    for i in range(len(columns)):
-        if columns[i] in rename_dict.keys():
-            columns[i] = rename_dict[columns[i]]
-    return columns
 
 
 def vlines(df):
@@ -214,7 +177,7 @@ class TimeSeriesHandler(object):
         """
         pdqs = pdq_grid(p = pacf_lags if len(pacf_lags) > 0 else [0],
                         d = diffs,
-                        q = acf_lags if len(acf_lags) > 0 else [0], )
+                        q = acf_lags if len(acf_lags) > 0 else [0])
         
         if not self.endog_is_exog:
             return (0,0,0), pdqs
@@ -305,21 +268,25 @@ class TimeSeriesHandler(object):
                     plot_prediction = False,
                     plot_rolling = False):
         
-        if self.exog: exog_suffix = '__exog'
+        # whether forecasting exog
+        if self.exog is not None: exog_suffix = '__exog'
         else: exog_suffix = ''
+        
+        # metadata dirs
+        forecast_plots_dir = os.path.join(PLOTS_DIR, 'forecast'); ensure_dir_exists(forecast_plots_dir)
+        
+        # exit if results have been calculated
+        if os.path.exists(f'results/{self.name}__{self.endog}{exog_suffix}__all.csv'): return
         
         iterating_orders = [self.best_order] if not all_orders else self.all_orders
         results_df = list()
-        
-        if os.path.exists(f'results/{self.name}__{self.endog}{exog_suffix}__all.csv'):
-            return
-        
         for order in iterating_orders:
-            if os.path.exists(f'plots/{self.name}__{self.endog}{exog_suffix}__{order}.png'):
-                continue
+            if os.path.exists(f'plots/{self.name}__{self.endog}{exog_suffix}__{order}.png'): continue
                 
             fig, ax = plt.subplots(figsize = (10, 4))
             show_plot = any([plot_fit, plot_prediction, plot_rolling])
+            
+            # if Linear Algebra error, go to next order
             try:
                 model = SARIMAX(endog = self.train[self.endog],
                                 exog = self.train[self.exog] if self.exog is not None else None,
@@ -331,15 +298,16 @@ class TimeSeriesHandler(object):
             except:
                 continue
             
+            # train data model fit with confidence interval
             pred_summary = model_fit.get_prediction(self.train.index[0], self.train.index[-1]).summary_frame()
-            pred_list = pred_summary['mean']
-            y_lower = pred_summary['mean_ci_lower']
-            y_upper = pred_summary['mean_ci_upper']
+            pred_list, y_lower, y_upper = pred_summary['mean'], pred_summary['mean_ci_lower'], pred_summary['mean_ci_upper']
             
+            # TODO: align series
             pred_list.index = pred_list.index - pd.Timedelta(days = 30.5)
             y_lower.index = y_lower.index - pd.Timedelta(days = 30.5)
             y_upper.index = y_upper.index - pd.Timedelta(days = 30.5)
             
+            # plot train data model fit
             if plot_fit:
                 ax.plot(self.df[self.endog], label = 'Ground Truth')
                 ax.plot(pred_list, label = 'Fit')
@@ -347,8 +315,9 @@ class TimeSeriesHandler(object):
             
             # forecast
             fcast = model_fit.get_forecast(steps = len(self.test), exog = self.exog_forecast).summary_frame()
-            metrics = regression_metrics(self.test[self.endog], fcast['mean'])
             
+            # forecast metrics calculate and save
+            metrics = regression_metrics(self.test[self.endog], fcast['mean'])
             metrics = dict(
                 name = self.name,
                 endog = self.endog,
@@ -357,38 +326,44 @@ class TimeSeriesHandler(object):
                 bic = model_fit.bic,
                 **metrics
             )
-            save_json_metadata(metadata_dir = 'results/separate', file_name = f'{self.name}__{self.endog}{exog_suffix}__{order}', data = metrics)
             results_df.append(metrics)
+            save_json_metadata(metadata_dir = 'results/separate',
+                               file_name = f'{self.name}__{self.endog}{exog_suffix}__{order}',
+                               data = metrics)
             
+            # plot prediction
             if plot_prediction:
                 ax.plot(fcast['mean'], label = 'Forecast')
                 ax.fill_between(fcast.index, fcast['mean_ci_lower'], fcast['mean_ci_upper'], alpha = 0.2)
             
-            
-            # # rolling prediction
-            # predictions = pd.Series()
-            # history = train
-            # for i in range(len(test)):
-            #     model = SARIMAX(endog = history[self.endog],
-            #                     exog = history[self.exog] if self.exog is not None else None,
-            #                     order = self.best_order)
-            #
-            #     model_fit = model.fit()
-            #     output = model_fit.forecast(steps = 1)
-            #     predictions = pd.concat([predictions, output])
-            #     history = pd.concat([history, test[i:i + 1]])
-            #
-            # if plot_rolling:
-            #     ax.plot(predictions, label = 'Rolling Prediction')
-            #     # ax.set_title(f'{self.name}\n rmse={round(rmse, 4)}\n order={self.best_order}, seasonal_order={seasonal_order}')
-            
+            # show plots
             if show_plot:
                 for i in vlines(self.df):
                     ax.axvline(x = i, color = "black", alpha = 0.2, linestyle = "--")
                 ax.legend()
-                ax.set_title(f'Model fit {self.name}\n rmse={round(12.1234, 4)}\n order={self.best_order}, seasonal_order={self.seasonal_order}')
-                plt.savefig(f'plots/{self.name}__{self.endog}{exog_suffix}__{order}')
+                ax.set_title(f'Model fit {self.name}\n mape={metrics["mape"]}\n order={self.best_order}, seasonal_order={self.seasonal_order}')
+                plt.savefig(f'{forecast_plots_dir}/{self.name}__{self.endog}{exog_suffix}__{order}')
                 plt.close()
-                # fig.show()
             
         pd.DataFrame(results_df).to_csv(f'results/{self.name}__{self.endog}{exog_suffix}__all.csv', index = False)
+
+# # rolling prediction
+# predictions = pd.Series()
+# history = train
+# for i in range(len(test)):
+#     model = SARIMAX(endog = history[self.endog],
+#                     exog = history[self.exog] if self.exog is not None else None,
+#                     order = self.best_order)
+#
+#     model_fit = model.fit()
+#     output = model_fit.forecast(steps = 1)
+#     predictions = pd.concat([predictions, output])
+#     history = pd.concat([history, test[i:i + 1]])
+#
+# if plot_rolling:
+#     ax.plot(predictions, label = 'Rolling Prediction')
+#     # ax.set_title(f'{self.name}\n rmse={round(rmse, 4)}\n order={self.best_order}, seasonal_order={seasonal_order}')
+
+
+
+
