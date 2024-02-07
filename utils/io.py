@@ -10,6 +10,8 @@ def ensure_dir_exists(dir_path,
     Can be made recursve if needed
     """
     os.makedirs(dir_path, exist_ok = True)
+    
+    return dir_path
 
 
 def save_json_metadata(metadata_dir = None,
