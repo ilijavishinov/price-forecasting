@@ -1,3 +1,5 @@
 ## Ignize interview
 
-![plot](./data/imgs/banner.png)
+
+![plot](./data/imgs/Consumables_10.jpg)
+
