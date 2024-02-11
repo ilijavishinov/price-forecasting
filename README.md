@@ -1,3 +1,3 @@
 ## Ignize interview
 
-![plot](./imgs/banner.png)
+![plot](./data/imgs/banner.png)
