@@ -17,9 +17,10 @@ PRICING_COLS = [
 ]
 
 
-def get_x_y_relevant_dfs(product,
-                         y_name = 'Standard Cost'):
+def get_x_y_relevant_dfs(product: str,
+                         y_name: str = 'Standard Cost'):
     """
+    Get X (features), y (target), and relevant df (only with relevant columns) for cleaner analysis
     """
     
     df = pd.read_excel('../data/Price Management.xlsx')
@@ -53,6 +54,7 @@ def get_x_y_relevant_dfs(product,
 def sweetviz_analysis(df,
                       product):
     """
+    Quick overall analysis with sweetviz
     """
     
     report_df_ckd = sweetviz.analyze(df)
@@ -63,6 +65,7 @@ def sweetviz_analysis(df,
 def pairplot(df,
              product):
     """
+    Seaborn pairplot to analyze features relationships
     """
     
     sns.pairplot(df,
@@ -76,6 +79,7 @@ def pairplot(df,
 def corrmatrix(df,
                product):
     """
+    Simple correlation matrix
     """
 
     corr = df.corr()
@@ -94,6 +98,8 @@ def corrmatrix(df,
 def corrmatrix_scaled(df,
                       product):
     """
+    More advanced correlation matrix with squares scaled by p-values
+    To distinguish significant from non-significant correlations
     """
 
     correlation_matrix = df.corr(method = 'pearson')
@@ -104,14 +110,19 @@ def corrmatrix_scaled(df,
                              save_path = os.path.join(PLOTS_DIR, 'general', f'corr_scaled_{product}.pdf'))
 
 
-def linear_regression_coefficients(model, X):
-    coefs = {X.columns[i]: model.coef_[i].round(4) for i in range(X.shape[1])}
-    print('')
+def linear_regression_coefficients(model, X_columns):
+    """
+    Get the coefficients of a linear regression model
+    """
+    coefs = {X_columns[i]: model.coef_[i].round(4) for i in range(len(X_columns))}
     return coefs
     
 
-def linear_regression_formula(model, X, y_name = ''):
-    coefs = {X.columns[i]: model.coef_[i].round(4) for i in range(X.shape[1])}
+def linear_regression_formula(model, X_columns, y_name = ''):
+    """
+    Get a string formula for the solved linear regression equation
+    """
+    coefs = {X_columns[i]: model.coef_[i].round(4) for i in range(len(X_columns))}
     intercept = model.intercept_
     formula_str = f'{y_name} = {int(intercept)} '
     for coef_name, coef_value in coefs.items():
@@ -122,6 +133,8 @@ def linear_regression_formula(model, X, y_name = ''):
 
 def iterative_selectiono_vif_ordered_features(x):
     """
+    Itteratively turn off one feature wich has the highest VIF (is most correlated with other features)
+    Goal is to remove multicollinearity for clearer explanation
     """
     x = x.copy(deep = True)
     
@@ -138,6 +151,7 @@ def iterative_selectiono_vif_ordered_features(x):
 
 def all_possible_feature_combinations(x):
     """
+    Get all combinations of all lengths from the features
     """
     features = x.columns.tolist()
 
@@ -148,6 +162,4 @@ def all_possible_feature_combinations(x):
                 all_combinations_of_all_lengths.append(list(subset))
             
     return all_combinations_of_all_lengths
-
-
 

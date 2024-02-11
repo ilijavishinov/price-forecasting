@@ -1,7 +1,6 @@
 import json
 import os
-import pandas as pd
-
+from typing import Dict
 
 def ensure_dir_exists(dir_path,
                       check_parent_dir = False):
@@ -18,6 +17,7 @@ def save_json_metadata(metadata_dir = None,
                        file_name = None,
                        data = None):
     """
+    Save json file
     """
     if not file_name.endswith('.json'):
         file_name += '.json'
@@ -29,8 +29,9 @@ def save_json_metadata(metadata_dir = None,
 
 
 def rename_columns(columns,
-                   rename_dict):
+                   rename_dict: Dict):
     """
+    Rename columns in a pd.DataFrame
     """
     for i in range(len(columns)):
         if columns[i] in rename_dict.keys():

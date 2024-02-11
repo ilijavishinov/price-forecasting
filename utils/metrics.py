@@ -5,6 +5,7 @@ import pandas as pd
 
 def regression_metrics(y_true, y_pred):
     """
+    Calculate regression metrics MAE, MAPE, RMSE
     """
     return dict(mae = mean_absolute_error(y_true, y_pred),
                 mape = mean_absolute_percentage_error(y_true, y_pred),
@@ -19,13 +20,13 @@ def calc_vif(df):
     One recommendation is that if VIF is greater than 5
     - Then the explanatory variable given by exog_idx is highly collinear with the other explanatory variables
         - The parameter estimates will have large standard errors because of this
-
     """
-    # Calculating VIF
-    vif = pd.DataFrame()
-    vif["feature"] = df.columns
-    vif["VIF"] = [variance_inflation_factor(df.values, i) for i in range(df.shape[1])]
-    return vif
+
+    vif_df = pd.DataFrame()
+    vif_df["feature"] = df.columns
+    vif_df["VIF"] = [variance_inflation_factor(df.values, i) for i in range(df.shape[1])]
+    
+    return vif_df
 
 
 

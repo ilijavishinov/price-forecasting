@@ -6,11 +6,12 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.statespace.sarimax import SARIMAXResults
 from statsmodels.tsa.stattools import acf
 from statsmodels.tsa.stattools import adfuller, pacf
-
+from typing import List, Tuple
 from utils.io import *
 from utils.metrics import *
 
 PLOTS_DIR = 'plots'
+
 
 def vlines(df):
     """
@@ -23,6 +24,7 @@ def vlines(df):
     else:
         return []
 
+
 def pdq_grid(p, d, q):
     grid = []
     for i in p:
@@ -31,16 +33,18 @@ def pdq_grid(p, d, q):
                 grid.append((i, j, k))
     return grid
 
-def PDQm_grid(P, D, Q, m):
-    PDQm = []
+
+def pqdm_grid(P, D, Q, m):
+    pqdm = []
     for i in P:
         for j in D:
             for k in Q:
                 for l in m:
-                    PDQm.append((i, j, k, l))
-    return PDQm
+                    pqdm.append((i, j, k, l))
+    return pqdm
 
-def adf_summary(time_series):
+
+def adf_test_statistic(time_series):
     """
     """
     # set name
@@ -49,7 +53,7 @@ def adf_summary(time_series):
     # get return values
     adf_test['adfstat'], adf_test['pvalue'], adf_test['usedlag'], adf_test['nobs'], adf_test['critvalues'], adf_test['icbest'] = adfuller(time_series.dropna())
     
-    adf_test['test_significant'] = adf_test['pvalue'] < 0.25
+    adf_test['test_significant'] = adf_test['pvalue'] < 0.05
     
     # unpack critical values
     for pct in [1, 5, 10]:
@@ -59,6 +63,8 @@ def adf_summary(time_series):
     adf_test.pop('critvalues')
     
     return adf_test
+
+
 
 def ts_decomposition(df,
                      endog,
@@ -96,29 +102,24 @@ def ts_decomposition(df,
     
     plt.close(fig)
     
-    # check where the null values are
-    # df_null = df.isna()
-    # df_null[df_null['sales_diff'] == True].index
+
 
 class TimeSeriesHandler(object):
     """
     """
-    df = None
     best_order = None
-    endog = None
-    exog = None
     forecast = None
     exog_forecast = None
-    seasonal_order = None
     all_orders = None
     all_seasonal_orders = [None]
     
     def __init__(self,
-                 name,
-                 df,
-                 endog,
-                 exog = None,
-                 endog_is_exog = False):
+                 name: str,
+                 df: pd.DataFrame,
+                 endog: str,
+                 metadata_folder_suffix: str,
+                 exog: List[str] = None,
+                 endog_is_exog: bool = False):
 
 
         self.name = name
@@ -133,17 +134,22 @@ class TimeSeriesHandler(object):
         
         # metadata dirs
         self.exog_suffix = '__withExog' if self.exog is not None else ''
-        self.forecast_plots_dir = ensure_dir_exists(os.path.join(PLOTS_DIR, 'forecast', f'{self.name}__{self.endog}{self.exog_suffix}'))
+        self.forecast_plots_dir = ensure_dir_exists(os.path.join(PLOTS_DIR, f'forecast{metadata_folder_suffix}', f'{self.name}__{self.endog}{self.exog_suffix}'))
+        self.forecast_best_plots_dir = ensure_dir_exists(os.path.join(PLOTS_DIR, f'forecast_best{metadata_folder_suffix}'))
         self.models_dir = ensure_dir_exists('models')
-        self.results_dir = ensure_dir_exists('results')
+        self.results_dir = ensure_dir_exists(f'results{metadata_folder_suffix}')
 
     
     def set_exog_forecast(self,
-                          exog_forecast_df):
+                          exog_forecast_df: pd.DataFrame):
+        """
+        Set 12-month forecast for the exogenous features
+        """
         self.exog_forecast = exog_forecast_df
     
     def determine_diff_order(self):
         """
+        Determine the differencing order of the series needed to make it stationary for ARIMA modeling
         """
         
         diff_ts = self.train[self.endog]
@@ -151,11 +157,13 @@ class TimeSeriesHandler(object):
         diff_order = 0
         ts_stationary = False
         
+        # calculate ts differences while ts is not stationary
         while not ts_stationary:
             time_series = diff_ts.diff().dropna()
             diff_order += 1
-            ts_stationary = adf_summary(time_series)['test_significant']
-            # print(f'{diff_order} stationary {ts_stationary}')
+            ts_stationary = adf_test_statistic(time_series)['test_significant']
+            
+            # don't go above 3rd order differencing, as the series may never become stationary
             if diff_order == 3:
                 break
         
@@ -163,6 +171,8 @@ class TimeSeriesHandler(object):
     
     def acf_lags(self):
         """
+        Compute the autocorrelation function for the lags
+        Return the significant lags which have corr coef above 0.2
         """
         ACF, ACF_ci = acf(self.train[self.endog], alpha = 0.05)
         lags = np.where(abs(ACF) > 0.2)[0]
@@ -170,48 +180,56 @@ class TimeSeriesHandler(object):
     
     def pacf_lags(self):
         """
+        Compute the partial autocorrelation function for the lags
+        Return the significant lags which have corr coef above 0.2
         """
         PACF, PACF_ci = pacf(self.train[self.endog], alpha = 0.05)
         lags = np.where(abs(PACF) > 0.2)[0]
         return lags
     
     def best_aic_order(self,
-                       pacf_lags,
-                       acf_lags,
-                       diffs,
-                       seasonal_orders):
+                       pacf_lags: List[int],
+                       acf_lags: List[int],
+                       diffs: List[int],
+                       seasonal_orders: bool):
         """
+        Get the best order depending on AIC statistic on the train set
+        
+        Currently returning the gred of all possible orders
+        Currently not calculationg best orders based on AIC and BIC statistics (commented code)
         """
         pdqs = pdq_grid(p = pacf_lags if len(pacf_lags) > 0 else [0],
                         d = diffs,
                         q = acf_lags if len(acf_lags) > 0 else [0])
         
-        pdqs_seasonal = PDQm_grid([1], [0, 1, 2], [1], [12]) if seasonal_orders else [None]
+        pdqs_seasonal = pqdm_grid([1], [0, 1, 2], [1], [12]) if seasonal_orders else [None]
         
-        if not self.endog_is_exog:
-            return (0, 0, 0), pdqs, pdqs_seasonal
-        else:
-            return (0, 0, 0), pdqs, pdqs_seasonal
-            
-            # ic_list = list()
-            # for pdq in pdqs:
-            #     # print(f'Fitting {pdq} for {self.name}')
-            #     ar_model = SARIMAX(endog = self.train[self.endog],
-            #                        exog = self.train[self.exog] if self.exog is not None else None,
-            #                        order = pdq)
-            #     ar_model_fit = ar_model.fit()
-            #
-            #     ic_list.append(dict(order = pdq,
-            #                         aic = ar_model_fit.aic,
-            #                         bic = ar_model_fit.bic))
-            #
-            # ic_df = pd.DataFrame(ic_list).sort_values('aic')
-            # ensure_dir_exists('results')
-            # ic_df.to_csv(f'results/train_aic_{self.name}.csv', index = False)
-            # best_order = ic_df.iloc[0]['order']
-            # return best_order, pdqs
+        return None, pdqs, pdqs_seasonal
+        
+        # currently not calculationg best orders based on AIC and BIC statistics
+        
+        # ic_list = list()
+        # for pdq in pdqs:
+        #     # print(f'Fitting {pdq} for {self.name}')
+        #     model = SARIMAX(endog = self.train[self.endog],
+        #                        exog = self.train[self.exog] if self.exog is not None else None,
+        #                        order = pdq)
+        #     model_fit = model.fit()
+        #
+        #     ic_list.append(dict(order = pdq,
+        #                         aic = model_fit.aic,
+        #                         bic = model_fit.bic))
+        #
+        # ic_df = pd.DataFrame(ic_list).sort_values('aic')
+        # ensure_dir_exists('results')
+        # ic_df.to_csv(f'results/train_aic_{self.name}.csv', index = False)
+        # best_order = ic_df.iloc[0]['order']
+        # return best_order, pdqs
     
     def plot_acf_pacf(self):
+        """
+        Plot the ACF and PACF functino values for the lags
+        """
         ensure_dir_exists(os.path.join('plots', 'corr_funcs'))
         
         sm.graphics.tsa.plot_acf(self.df[self.endog], lags = 25)
@@ -222,7 +240,11 @@ class TimeSeriesHandler(object):
         plt.savefig(os.path.join('plots', 'corr_funcs', f'{self.name}_{self.endog}_pacf.pdf'))
         plt.close()
     
-    def determine_orders(self, seasonal_orders = False):
+    def determine_orders(self,
+                         seasonal_orders: bool = False):
+        """
+        Determining the best orders for the current time series
+        """
         diff_ts, order_diff = self.determine_diff_order()
         acf_lags = self.acf_lags()
         pacf_lags = self.pacf_lags()
@@ -232,50 +254,17 @@ class TimeSeriesHandler(object):
                                                                                          diffs = [order_diff],
                                                                                          seasonal_orders = seasonal_orders)
     
-    def fit_sarimax_exog(self,
-                         plot = False):
-        model = SARIMAX(endog = self.train[self.endog],
-                        exog = self.train[self.exog] if self.exog is not None else None,
-                        order = self.best_order)
-        
-        model_fit = model.fit()
-        pred_summary = model_fit.get_prediction(self.train.index[0], self.train.index[-1]).summary_frame()
-        pred_list = pred_summary['mean']
-        y_lower = pred_summary['mean_ci_lower']
-        y_upper = pred_summary['mean_ci_upper']
-        
-        pred_list.index = pred_list.index - pd.Timedelta(days = 30.5)
-        y_lower.index = y_lower.index - pd.Timedelta(days = 30.5)
-        y_upper.index = y_upper.index - pd.Timedelta(days = 30.5)
-        
-        fcast = model_fit.get_forecast(steps = len(self.test)).summary_frame()
-        self.forecast = fcast['mean']
-        
-        if plot:
-            fig, ax = plt.subplots(figsize = (20, 5))
-            ax.plot(self.df[self.endog], label = 'Ground Truth')
-            ax.plot(pred_list, label = 'Fit')
-            # ax.fill_between(x = self.train.index, y1 = y_lower, y2 = y_upper, color = 'orange', alpha = 0.2)
-            ax.plot(fcast['mean'], label = 'Forecast')
-            # ax.fill_between(fcast.index, fcast['mean_ci_lower'], fcast['mean_ci_upper'], alpha = 0.2)
-            
-            for i in vlines(self.df):
-                ax.axvline(x = i, color = "black", alpha = 0.2, linestyle = "--")
-            ax.legend()
-            ax.set_title(f'Model fit {self.name} \n order {self.best_order}')
-            plt.savefig(f'plots/{self.name}')
-            fig.show()
-    
     def plot_forecast(self,
-                      fit,
-                      fit_lower,
-                      fit_upper,
-                      forecast,
-                      plot_path,
-                      order,
-                      seasonal_order,
-                      metrics):
+                      fit: pd.Series,
+                      fit_lower: pd.Series,
+                      fit_upper: pd.Series,
+                      forecast: pd.Series,
+                      plot_path: str,
+                      order: Tuple,
+                      seasonal_order: Tuple,
+                      metrics: dict):
         """
+        Plot ground truth, model fit and forecast with confidence bounds
         """
         fig, ax = plt.subplots(figsize = (10, 4))
 
@@ -295,16 +284,17 @@ class TimeSeriesHandler(object):
             ax.axvline(x = i, color = "black", alpha = 0.2, linestyle = "--")
 
         ax.legend()
-        ax.set_title(f'Model fit {self.name}\n mape={round(metrics["mape"], 2)} order={order}, seasonal_order={seasonal_order}')
+        ax.set_title(f'Model fit {self.name}\n aic={round(metrics["aic"], 2)} bic={round(metrics["bic"], 2)} mape={round(metrics["mape"], 2)} order={order}, seasonal_order={seasonal_order}')
         plt.savefig(plot_path)
         plt.close()
         
     
     def fit_single_sarima(self,
-                          model_name,
-                          order,
-                          seasonal_order):
+                          model_name: str,
+                          order: Tuple[int],
+                          seasonal_order: Tuple[int]):
         """
+        fit and save a SARIMAX model, or load it if it exists
         """
         
         if os.path.exists(os.path.join(self.models_dir, f'{model_name}.pkl')):
@@ -321,8 +311,9 @@ class TimeSeriesHandler(object):
         return model_fit
     
     def forecast_single_sarima(self,
-                               model_fit):
+                               model_fit: SARIMAXResults):
         """
+        Forecast the next X (the amount of test points) steps in the time series and calculate metrics
         """
         
         fcast = model_fit.get_forecast(steps = len(self.test), exog = self.exog_forecast).summary_frame()
@@ -330,11 +321,16 @@ class TimeSeriesHandler(object):
         return fcast, metrics
     
     def fit_grid_orders_and_seasonal_orders(self,
-                                            orders,
-                                            seasonal_orders,
-                                            best_metrics = None,
-                                            save_results_df = False,
-                                            plots = True):
+                                            orders: List[Tuple],
+                                            seasonal_orders: List[Tuple],
+                                            best_metrics: List[str] = None,
+                                            save_results_df: bool = False,
+                                            plots: bool = True):
+        
+        """
+        Run the grid of order and seasonal order combinations
+        For each fit a SARIMAX model, forecast, calculate forecasting metrics, and make plots
+        """
         
         if best_metrics is None:
             order_seasonal_order_metric_pairs = [[o, so, None] for o in orders for so in seasonal_orders]
@@ -344,7 +340,7 @@ class TimeSeriesHandler(object):
         results_df = list()
         # for seasonal_order in seasonal_orders:
         #     for order in orders:
-        for order, seasonal_order, metric in order_seasonal_order_metric_pairs:
+        for order, seasonal_order, best_metric in order_seasonal_order_metric_pairs:
             seasonal_suffix = '' if seasonal_order is None else f'_{str(seasonal_order)}'
             model_name = f'{self.name}__{self.endog}{self.exog_suffix}__{order}{seasonal_suffix}'
             
@@ -360,13 +356,15 @@ class TimeSeriesHandler(object):
             pred_summary = model_fit.get_prediction(self.train.index[0], self.train.index[-1]).summary_frame()
             pred_list, y_lower, y_upper = pred_summary['mean'], pred_summary['mean_ci_lower'], pred_summary['mean_ci_upper']
             
-            # # TODO: align series
-            # pred_list.index = pred_list.index - pd.Timedelta(days = 30.5)
-            # y_lower.index = y_lower.index - pd.Timedelta(days = 30.5)
-            # y_upper.index = y_upper.index - pd.Timedelta(days = 30.5)
+            # TODO: align series
+            pred_list.index = pred_list.index - pd.Timedelta(days = 30.5)
+            y_lower.index = y_lower.index - pd.Timedelta(days = 30.5)
+            y_upper.index = y_upper.index - pd.Timedelta(days = 30.5)
             
             try:
                 fcast, metrics = self.forecast_single_sarima(model_fit = model_fit)
+                if best_metric == 'aic':
+                    self.forecast = fcast['mean']
                 metrics = dict(name = self.name, endog = self.endog,
                                order = str(order), seasonal_order = str(seasonal_order),
                                aic = model_fit.aic, bic = model_fit.bic,
@@ -376,11 +374,16 @@ class TimeSeriesHandler(object):
                 print(f'Cannot forecast {model_name}')
                 continue
             
-            # show plots
-            if metric is not None:
+            if not self.endog_is_exog:
+                model_name = f'{self.name}__{self.endog}{self.exog_suffix}__{order}{seasonal_suffix}'
+            else: model_name = f'{self.name}__{order}{seasonal_suffix}'
+            
+            if best_metric is None:
                 plot_path = f'{self.forecast_plots_dir}/{model_name}.jpg'
+                plots = False
             else:
-                plot_path = f'{self.forecast_plots_dir}/{model_name}_{metric}Best.jpg'
+                plot_path = f'{self.forecast_best_plots_dir}/{model_name}_{best_metric}Best.jpg'
+                
             if plots and not os.path.exists(plot_path):
                 self.plot_forecast(fit = pred_list,
                                    fit_lower = y_lower,
@@ -399,8 +402,10 @@ class TimeSeriesHandler(object):
         return results_df
     
     def fit_sarimax(self,
-                    all_orders = False):
+                    all_orders: bool = False):
         """
+        Run the grid of set orders and seasonal orders, choose the best orders depending on AIC nad MAPE
+        For the best orders, save plots and results in a separate folder
         """
 
         # exit if results have been calculated

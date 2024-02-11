@@ -5,18 +5,6 @@ from scipy import stats
 import numpy as np
 
 
-def pearson_nan_proof(x, y, round_flag: bool = False):
-    
-    two_feature_frame = pd.DataFrame({'x': x, 'y': y})
-    where_both_not_null_frame = two_feature_frame[~two_feature_frame['x'].isna() & ~two_feature_frame['y'].isna()]
-    if where_both_not_null_frame.shape[0] < 3:
-        return np.nan
-    else:
-        return_val =  stats.pearsonr(where_both_not_null_frame['x'], where_both_not_null_frame['y'])[0]
-        if round_flag: return round(return_val, 4)
-        else: return return_val
-
-
 def p_value_pearson_nan_proof(x, y, round_flag: bool = False):
     
     two_feature_frame = pd.DataFrame({'x': x, 'y': y})
@@ -32,11 +20,11 @@ def p_value_pearson_nan_proof(x, y, round_flag: bool = False):
 def series_apply_pval(s):
     return s.apply(p_values_apply)
 
+
 def p_values_apply(p_val):
     if p_val <= 0.05: return 1
     elif p_val <= 0.1: return .25
     else: return .05
-
 
 
 def value_to_color(val):
