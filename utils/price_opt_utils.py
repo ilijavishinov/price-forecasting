@@ -142,8 +142,9 @@ def iterative_selectiono_vif_ordered_features(x):
     num_features = x.shape[1]
     while len(iterative_selected_features) < num_features:
         vif_df = calc_vif(x)
+        print(vif_df)
         # TODO: wrong selection of vif max feature
-        x.drop(vif_df.max()['feature'], axis = 1, inplace = True)
+        x.drop(vif_df[vif_df['VIF'].idxmax()]['feature'], axis = 1, inplace = True)
         iterative_selected_features.append(x.columns.tolist())
     
     return iterative_selected_features

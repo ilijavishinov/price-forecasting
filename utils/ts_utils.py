@@ -202,7 +202,7 @@ class TimeSeriesHandler(object):
                         d = diffs,
                         q = acf_lags if len(acf_lags) > 0 else [0])
         
-        pdqs_seasonal = pqdm_grid([1], [0, 1, 2], [1], [12]) if seasonal_orders else [None]
+        pdqs_seasonal = pqdm_grid([0, 1], [0, 1, 2], [0, 1], [12]) if seasonal_orders else [None]
         
         return None, pdqs, pdqs_seasonal
         
@@ -401,8 +401,8 @@ class TimeSeriesHandler(object):
             results_df.to_csv(os.path.join(self.results_dir, f'{self.name}__{self.endog}{self.exog_suffix}__all{seasonal_suffix}.csv'), index = False)
         return results_df
     
-    def fit_sarimax(self,
-                    all_orders: bool = False):
+    def fit_and_forecast_sarimax(self,
+                                 all_orders: bool = False):
         """
         Run the grid of set orders and seasonal orders, choose the best orders depending on AIC nad MAPE
         For the best orders, save plots and results in a separate folder
